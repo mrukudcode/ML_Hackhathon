@@ -1,119 +1,67 @@
+# hangman_manual.py
+
+import random
+import string
+
 class HangmanEnv:
+    """
+    A simple Hangman game environment for reinforcement learning.
+    """
     def __init__(self, word, max_wrong=6):
+        self.word = word.lower()
         self.max_wrong = max_wrong
-        self.reset(word)
+        self.guessed_letters = set()
+        self.wrong = 0
+        self.done = False
 
     def get_masked_word(self):
-        return ''.join([ch if ch in self.guessed else '_' for ch in self.word])
+        """Returns the current state of the word (e.g., 'a__l_')."""
+        masked = ""
+        for char in self.word:
+            if char in self.guessed_letters:
+                masked += char
+            else:
+                masked += "_"
+        return masked
 
-    def step(self, letter):
-        letter = letter.lower()
-        reward = 0
-        done = False
+    def step(self, action):
+        """
+        Takes a guess (action) and returns the next state, reward, and done status.
 
-        if letter in self.guessed:
-            reward = -2
-        elif letter in self.word:
-            self.guessed.add(letter)
-            reward = 10
+        Args:
+            action (str): The letter guess.
+
+        Returns:
+            tuple: (masked_word, reward, done)
+        """
+        if self.done:
+            return self.get_masked_word(), 0.0, True
+
+        action = action.lower()
+        
+        # 1. Handle Invalid/Repeat Guesses (Handled by the agent reward scheme, but tracked here)
+        if action in self.guessed_letters:
+            # Environment treats repeated guess as no-op but the Agent penalizes it
+            return self.get_masked_word(), 0.0, False 
+
+        self.guessed_letters.add(action)
+
+        # 2. Update state
+        reward = 0.0
+        
+        if action in self.word:
+            # Correct guess
+            pass 
         else:
-            self.guessed.add(letter)
+            # Wrong guess
             self.wrong += 1
-            reward = -5
 
-        if all(ch in self.guessed for ch in self.word):
-            done = True
-            reward += 50
-        elif self.wrong >= self.max_wrong:
-            done = True
-            reward -= 50
+        masked_word = self.get_masked_word()
 
-        return self.get_masked_word(), reward, done
+        # 3. Check termination conditions
+        win = ("_" not in masked_word)
+        loss = (self.wrong >= self.max_wrong)
+        self.done = win or loss
 
-    def reset(self, word):
-        self.word = str(word).strip().lower()
-        self.guessed = set()
-        self.wrong = 0
-        return self.get_masked_word()
-
-
-# --------- Interactive runner (manual words; no datasets) ----------
-DEFAULT_ORDER = "etaoinshrdlcumwfgypbvkjxqz"  # used for auto mode
-
-def play_manual(word, max_wrong=6):
-    env = HangmanEnv(word, max_wrong=max_wrong)
-    total_reward = 0
-    print(f"\nNew game started. Word length: {len(word)}")
-    print("State:", env.get_masked_word())
-
-    while True:
-        guess = input("Enter a letter (or 'quit' to stop this word): ").strip().lower()
-        if guess == "quit":
-            print("Stopping this word.\n")
-            break
-        if len(guess) != 1 or not guess.isalpha():
-            print("Please enter a single alphabetic character.\n")
-            continue
-
-        state, reward, done = env.step(guess)
-        total_reward += reward
-        print(f"Guess '{guess}' → {state} | Reward={reward} | Wrong={env.wrong}/{env.max_wrong}")
-
-        if done:
-            if state == env.word:
-                print(f"Game over ✅ You solved it! Word: '{env.word}' | Total Reward={total_reward}\n")
-            else:
-                print(f"Game over ❌ You lost. Word was: '{env.word}' | Total Reward={total_reward}\n")
-            break
-
-def play_auto(word, max_wrong=6, order=DEFAULT_ORDER):
-    env = HangmanEnv(word, max_wrong=max_wrong)
-    total_reward = 0
-    tried = set()
-    print(f"\nAuto-test for word '{word}' (len={len(word)})")
-    print("Start:", env.get_masked_word())
-
-    for ch in order:
-        if ch in tried:
-            continue
-        tried.add(ch)
-        state, reward, done = env.step(ch)
-        total_reward += reward
-        print(f"  guess '{ch}' → {state} | r={reward} | wrong={env.wrong}/{env.max_wrong}")
-        if done:
-            if state == env.word:
-                print(f"Result: WIN ✅ | steps={len(tried)} | total_reward={total_reward}\n")
-            else:
-                print(f"Result: LOSS ❌ | steps={len(tried)} | total_reward={total_reward}\n")
-            return
-    print(f"Stopped (ran out of letters). Final state: {env.get_masked_word()} | reward={total_reward}\n")
-
-
-if __name__ == "__main__":
-    print("=== Hangman (Manual Words) ===")
-    print("Enter any word to test. Press ENTER with no input to exit.")
-    while True:
-        w = input("\nWord to test (blank to quit): ").strip()
-        if not w:
-            print("Bye!")
-            break
-        if not w.isalpha():
-            print("Please enter letters only (no spaces/numbers).")
-            continue
-
-        mode = input("Mode? [m]anual guesses / [a]uto test: ").strip().lower()
-        if mode not in ("m", "a"):
-            print("Invalid choice. Defaulting to manual.")
-            mode = "m"
-
-        try:
-            mw = input("Max wrong guesses (default 6): ").strip()
-            max_wrong = int(mw) if mw else 6
-        except ValueError:
-            print("Invalid number. Using default 6.")
-            max_wrong = 6
-
-        if mode == "m":
-            play_manual(w, max_wrong=max_wrong)
-        else:
-            play_auto(w, max_wrong=max_wrong)
+        # Reward shaping is handled in the RL agent for flexibility
+        return masked_word, reward, self.done
